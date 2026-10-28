@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>ثبت تعداد نذر</title>
+<!-- SDK مینی‌اپ بله -->
+<script src="https://tapi.bale.ai/miniapp.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --text: #1d2430;
+    --muted: #6b7482;
+    --line: #dfe3ea;
+    --accent: #1f8a5b;
+    --accent-text: #ffffff;
+    --warn: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12161c;
+      --card: #1b212a;
+      --text: #eef1f5;
+      --muted: #98a2b3;
+      --line: #2c3541;
+      --accent: #2fb67c;
+      --accent-text: #08130e;
+      --warn: #ff8a80;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: Tahoma, "Segoe UI", system-ui, sans-serif; }
+  body { min-height: 100vh; padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px)); }
+  .card { max-width: 440px; margin: 0 auto; background: var(--card);
+    border: 1px solid var(--line); border-radius: 16px; padding: 18px; }
+  h1 { font-size: 18px; margin: 0 0 4px; line-height: 1.6; }
+  .sub { color: var(--muted); font-size: 14px; margin: 0 0 16px; }
+  .remaining { font-size: 14px; margin: 0 0 14px; }
+  .remaining b { font-size: 16px; }
+  label { display: block; font-size: 14px; color: var(--muted); margin-bottom: 6px; }
+  input[type=text] { width: 100%; font-size: 32px; text-align: center; padding: 12px;
+    border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--text);
+    direction: ltr; }
+  input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .preview { min-height: 24px; text-align: center; font-size: 15px; margin: 8px 0 12px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  .chip { flex: 1 1 calc(33% - 8px); min-width: 80px; padding: 12px 8px; font-size: 16px;
+    border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--text);
+    cursor: pointer; }
+  .chip:active { transform: scale(0.98); }
+  .row { display: flex; gap: 8px; }
+  button.main { flex: 1; padding: 14px; font-size: 17px; border: 0; border-radius: 12px;
+    background: var(--accent); color: var(--accent-text); cursor: pointer; font-weight: bold; }
+  button.main:disabled { opacity: 0.5; cursor: default; }
+  button.ghost { padding: 14px 16px; font-size: 15px; border-radius: 12px;
+    border: 1px solid var(--line); background: transparent; color: var(--text); cursor: pointer; }
+  .status { min-height: 22px; margin-top: 12px; font-size: 14px; text-align: center; }
+  .status.err { color: var(--warn); }
+  .banner { display: none; margin: 0 0 12px; padding: 10px 12px; border-radius: 10px;
+    border: 1px solid var(--warn); color: var(--warn); font-size: 13px; line-height: 1.8; }
+</style>
+</head>
+<body>
+<main class="card">
+  <div class="banner" id="banner">این صفحه باید از داخل بله (با دکمهٔ زیر پیام نذر) باز شود. در مرورگر معمولی فقط می‌توانید ظاهرش را ببینید.</div>
+  <h1 id="title">ثبت تعداد نذر</h1>
+  <p class="sub">تعدادی را که خوانده‌اید وارد کنید و ثبت را بزنید.</p>
+  <p class="remaining" id="remaining"></p>
+
+  <label for="num">تعداد</label>
+  <input id="num" type="text" inputmode="numeric" autocomplete="off" placeholder="0">
+  <div class="preview" id="preview"></div>
+
+  <div class="chips" id="chips"></div>
+
+  <div class="row">
+    <button class="ghost" id="clear" type="button">پاک کردن</button>
+    <button class="main" id="send" type="button" disabled>ثبت</button>
+  </div>
+  <div class="status" id="status" role="status"></div>
+</main>
+
+<script>
+(function () {
+  var params = new URLSearchParams(location.search);
+  var kid = params.get('k') || '';
+  var target = parseInt(params.get('t'), 10) || 0;
+  var remaining = parseInt(params.get('r'), 10);
+  if (isNaN(remaining)) remaining = target;
+  var title = params.get('n') || 'نذر';
+  var steps = (params.get('s') || '').split(',').map(Number).filter(function (x) { return x > 0; });
+  if (!steps.length) steps = [1, 10, 100];
+
+  var fa = new Intl.NumberFormat('fa-IR');
+  function $(id) { return document.getElementById(id); }
+  function toEn(s) {
+    return String(s)
+      .replace(/[۰-۹]/g, function (d) { return '۰۱۲۳۴۵۶۷۸۹'.indexOf(d); })
+      .replace(/[٠-٩]/g, function (d) { return '٠١٢٣٤٥٦٧٨٩'.indexOf(d); });
+  }
+
+  var WA = (window.Bale && window.Bale.WebApp) || null;
+  if (!WA) $('banner').style.display = 'block';
+  try { if (WA && WA.ready) WA.ready(); } catch (e) {}
+  try { if (WA && WA.expand) WA.expand(); } catch (e) {}
+
+  $('title').textContent = title;
+  $('remaining').innerHTML = 'باقی‌مانده: <b>' + fa.format(Math.max(remaining, 0)) + '</b>' +
+    (target ? ' از ' + fa.format(target) : '');
+
+  var input = $('num'), preview = $('preview'), sendBtn = $('send'), statusEl = $('status');
+  var value = 0, sent = false;
+
+  function setStatus(text, isErr) {
+    statusEl.textContent = text || '';
+    statusEl.className = 'status' + (isErr ? ' err' : '');
+  }
+
+  function render() {
+    if (value > 0) {
+      preview.textContent = fa.format(value) + ' مورد';
+    } else {
+      preview.textContent = '';
+    }
+    sendBtn.disabled = sent || value < 1 || value > Math.max(remaining, 0);
+    if (value > remaining && remaining >= 0) {
+      setStatus('بیشتر از باقی‌مانده است؛ حداکثر ' + fa.format(remaining) + ' را می‌توانید ثبت کنید.', true);
+    } else if (!sent) {
+      setStatus('');
+    }
+  }
+
+  function setValue(v) {
+    value = Math.max(0, Math.min(v, 1000000000));
+    input.value = value > 0 ? String(value) : '';
+    render();
+  }
+
+  input.addEventListener('input', function () {
+    var digits = toEn(input.value).replace(/[^0-9]/g, '');
+    value = digits ? parseInt(digits, 10) : 0;
+    if (String(value) !== digits && digits) input.value = String(value);
+    render();
+  });
+
+  var chips = $('chips');
+  steps.forEach(function (n) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip';
+    b.textContent = '+' + fa.format(n);
+    b.addEventListener('click', function () {
+      if (sent) return;
+      setValue(Math.min(value + n, Math.max(remaining, 0)));
+    });
+    chips.appendChild(b);
+  });
+
+  $('clear').addEventListener('click', function () { if (!sent) setValue(0); });
+
+  sendBtn.addEventListener('click', function () {
+    if (sent || value < 1 || value > remaining) return;
+    if (!kid) { setStatus('شناسهٔ نذر در لینک نیست. دوباره از دکمهٔ زیر پیام نذر وارد شوید.', true); return; }
+    if (!WA || !WA.sendData) {
+      setStatus('این صفحه باید داخل بله باز شود. فعلاً از دکمهٔ «✍️ تعداد دلخواه» در گروه استفاده کنید.', true);
+      return;
+    }
+    try {
+      WA.sendData(JSON.stringify({ k: kid, n: value }));
+      sent = true;
+      sendBtn.disabled = true;
+      setStatus('ثبت شد ✅ ' + fa.format(value) + ' مورد. تقبل الله');
+      setTimeout(function () { try { if (WA.close) WA.close(); } catch (e) {} }, 700);
+    } catch (e) {
+      setStatus('ارسال انجام نشد. این نسخهٔ بله شاید پشتیبانی نکند؛ از «✍️ تعداد دلخواه» در گروه استفاده کنید.', true);
+    }
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
